@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DUS Virtual Tower</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0a0a;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 20px;
+      background: #111;
+      border-bottom: 1px solid #222;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    header h1 {
+      font-size: 14px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #ccc;
+      margin-right: auto;
+    }
+
+    /* ── Stream selector buttons ── */
+    #stream-selector {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .stream-btn {
+      background: #1a1a1a;
+      color: #666;
+      border: 1px solid #333;
+      padding: 4px 12px;
+      font-family: inherit;
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .stream-btn:hover {
+      border-color: #555;
+      color: #aaa;
+    }
+
+    .stream-btn.active {
+      background: #002a14;
+      border-color: #00e676;
+      color: #00e676;
+    }
+
+    .stream-btn.switching {
+      border-color: #555;
+      color: #555;
+      cursor: default;
+    }
+
+    /* ── Status indicator ── */
+    #status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #444;
+      flex-shrink: 0;
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+
+    #status-dot.live  { background: #00e676; box-shadow: 0 0 8px #00e676; }
+    #status-dot.error { background: #ff1744; }
+
+    #status-text {
+      font-size: 11px;
+      color: #666;
+      letter-spacing: 1px;
+      min-width: 120px;
+    }
+
+    #stream-stats {
+      font-size: 11px;
+      color: #555;
+      letter-spacing: 1px;
+      min-width: 140px;
+    }
+
+    /* ── Main feed area ── */
+    main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      min-height: 0;
+    }
+
+    #feed-wrapper {
+      position: relative;
+      max-width: 100%;
+      max-height: 100%;
+      display: none;
+    }
+
+    #feed {
+      max-width: 100%;
+      max-height: calc(100vh - 80px);
+      object-fit: contain;
+      border: 1px solid #222;
+      display: block;
+      background: #000;
+    }
+
+    #camera-label {
+      position: absolute;
+      bottom: 8px;
+      left: 8px;
+      background: rgba(0,0,0,0.65);
+      color: #00e676;
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      pointer-events: none;
+    }
+
+    #switching-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      color: #00e676;
+      font-size: 12px;
+      letter-spacing: 3px;
+      pointer-events: none;
+    }
+
+    #feed-wrapper.switching #switching-overlay {
+      display: flex;
+    }
+
+    #placeholder {
+      color: #333;
+      font-size: 13px;
+      letter-spacing: 2px;
+      text-align: center;
+      line-height: 2;
+    }
+
+    footer {
+      padding: 6px 20px;
+      font-size: 10px;
+      color: #333;
+      letter-spacing: 1px;
+      border-top: 1px solid #161616;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>✈ DUS Virtual Tower</h1>
+  <div id="stream-selector"></div>
+  <div id="status-dot"></div>
+  <span id="status-text">INITIALISING</span>
+  <span id="stream-stats"></span>
+</header>
+
+<main>
+  <div id="feed-wrapper">
+    <video id="feed" autoplay muted playsinline></video>
+    <div id="camera-label"></div>
+    <div id="switching-overlay">SWITCHING</div>
+  </div>
+  <div id="placeholder">AWAITING STREAM</div>
+</main>
+
+<footer>Düsseldorf Airport — Live Airfield Monitor &nbsp;|&nbsp; <span id="stream-url" style="color:#444"></span></footer>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script>
+  const streamUrlEl = document.getElementById('stream-url');
+  const feedWrapper  = document.getElementById('feed-wrapper');
+  const feed         = document.getElementById('feed');
+  const cameraLabel  = document.getElementById('camera-label');
+  const placeholder  = document.getElementById('placeholder');
+  const dot          = document.getElementById('status-dot');
+  const statusText   = document.getElementById('status-text');
+  const selector     = document.getElementById('stream-selector');
+
+  let switching    = false;
+  let activeIndex  = -1;
+  let activeLabel  = '';
+  let hls          = null;
+  let pendingLabel = '';   // label waiting to be shown when video starts playing
+
+  // ── FPS / resolution tracker ───────────────────────────────────────────────
+
+  const streamStats = document.getElementById('stream-stats');
+  let   fpsFrameCount = 0;
+  let   fpsLastTime   = performance.now();
+
+  function updateStats() {
+    if (!feed.videoWidth) return;
+
+    const now     = performance.now();
+    const elapsed = (now - fpsLastTime) / 1000;
+
+    // Use requestVideoFrameCallback if available, else fall back to decoded frame count
+    if (typeof feed.getVideoPlaybackQuality === 'function') {
+      const q   = feed.getVideoPlaybackQuality();
+      const fps = elapsed > 0 ? Math.round((q.totalVideoFrames - fpsFrameCount) / elapsed) : 0;
+      fpsFrameCount = q.totalVideoFrames;
+      fpsLastTime   = now;
+      streamStats.textContent = `${feed.videoWidth}×${feed.videoHeight} · ${fps} FPS`;
+    } else {
+      streamStats.textContent = `${feed.videoWidth}×${feed.videoHeight}`;
+    }
+  }
+
+  setInterval(updateStats, 1000);
+
+  // ── HLS playback ──────────────────────────────────────────────────────────
+
+  function playStream(url, label) {
+    if (!url) return;
+    pendingLabel = label;
+
+    if (hls) {
+      hls.destroy();
+      hls = null;
+    }
+
+    if (Hls.isSupported()) {
+      hls = new Hls({
+        liveSyncDurationCount:     1,   // target 1 segment behind live edge
+        liveMaxLatencyDurationCount: 4,
+        maxBufferLength:           8,
+        backBufferLength:          0,
+      });
+
+      hls.loadSource(url);
+      hls.attachMedia(feed);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        feed.play().catch(() => {});
+      });
+
+      // Fragment downloaded → mark as live (stream is healthy)
+      hls.on(Hls.Events.FRAG_LOADED, () => {
+        feedWrapper.style.display = 'block';
+        placeholder.style.display = 'none';
+        dot.className             = 'live';
+        statusText.textContent    = 'LIVE';
+      });
+
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (!data.fatal) return;
+        dot.className      = 'error';
+        statusText.textContent = 'ERROR — RETRYING';
+        // HLS.js will auto-recover from network errors; for media errors, reload
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          hls.recoverMediaError();
+        } else {
+          setTimeout(() => hls && hls.startLoad(), 3000);
+        }
+      });
+
+    } else if (feed.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari native HLS
+      feed.src = url;
+      feed.addEventListener('loadedmetadata', () => feed.play().catch(() => {}), { once: true });
+      feed.addEventListener('playing', () => {
+        feedWrapper.style.display = 'block';
+        placeholder.style.display = 'none';
+        dot.className             = 'live';
+        statusText.textContent    = 'LIVE';
+      }, { once: true });
+    } else {
+      placeholder.textContent = 'HLS NOT SUPPORTED IN THIS BROWSER';
+    }
+  }
+
+  function renderSwitchingDone() {
+    selector.querySelectorAll('.stream-btn').forEach(b => {
+      const idx = parseInt(b.dataset.index, 10);
+      b.classList.remove('switching');
+      if (idx === activeIndex) b.classList.add('active');
+      else b.classList.remove('active');
+    });
+  }
+
+  // ── Stream selector ────────────────────────────────────────────────────────
+
+  async function loadStreams() {
+    try {
+      const res = await fetch('/streams');
+      if (!res.ok) return;
+      const streams = await res.json();
+      renderSelector(streams);
+    } catch (_) {}
+  }
+
+  function renderSelector(streams) {
+    const hadButtons = selector.children.length > 0;
+    selector.innerHTML = '';
+    let activeStream = null;
+
+    streams.forEach(s => {
+      const btn = document.createElement('button');
+      btn.className = 'stream-btn' + (s.active ? ' active' : '');
+      btn.textContent = s.label;
+      btn.dataset.index = s.index;
+      btn.addEventListener('click', () => switchStream(s.index, s.label, s.url));
+      selector.appendChild(btn);
+      if (s.active) {
+        activeStream = s;
+        streamUrlEl.textContent = s.url || '';
+      }
+    });
+
+    // On first load, auto-play the active stream
+    if (!hadButtons && activeStream) {
+      activeIndex  = activeStream.index;
+      activeLabel  = activeStream.label;
+      playStream(activeStream.url, activeStream.label);
+    } else if (activeStream) {
+      activeIndex = activeStream.index;
+      activeLabel = activeStream.label;
+    }
+  }
+
+  async function switchStream(index, label, url) {
+    if (switching || index === activeIndex) return;
+    switching = true;
+
+    selector.querySelectorAll('.stream-btn').forEach(b => {
+      b.classList.remove('active');
+      b.classList.add('switching');
+    });
+
+    dot.className          = '';
+    statusText.textContent = 'SWITCHING';
+    feedWrapper.classList.add('switching');
+    activeIndex = index;
+    activeLabel = label;
+
+    try {
+      await fetch(`/streams/${index}`, { method: 'POST' });
+    } catch (_) {}
+
+    // Play immediately with the URL we already have from the button click;
+    // loadStreams will refresh in the background in case the URL has rotated.
+    playStream(url, label);
+    loadStreams();
+  }
+
+  // ── Clear switching overlay when video actually starts rendering ───────────
+
+  feed.addEventListener('playing', () => {
+    if (pendingLabel) {
+      cameraLabel.textContent = pendingLabel;
+      pendingLabel = '';
+    }
+    feedWrapper.classList.remove('switching');
+    switching = false;
+    renderSwitchingDone();
+    // Reset fps counter so the first sample after a stream change is clean
+    if (typeof feed.getVideoPlaybackQuality === 'function') {
+      fpsFrameCount = feed.getVideoPlaybackQuality().totalVideoFrames;
+    }
+    fpsLastTime = performance.now();
+    streamStats.textContent = '';
+  });
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+
+  async function pollUntilStreams() {
+    await loadStreams();
+    if (activeIndex === -1) {
+      setTimeout(pollUntilStreams, 3000);
+    } else {
+      setInterval(loadStreams, 35 * 60 * 1000);
+    }
+  }
+
+  pollUntilStreams();
+</script>
+
+</body>
+</html>
