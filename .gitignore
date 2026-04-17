@@ -44,3 +44,6 @@ vtower_*/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Commit notes
+COMMIT.md
