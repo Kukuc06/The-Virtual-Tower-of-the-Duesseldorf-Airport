@@ -101,6 +101,34 @@
       min-width: 140px;
     }
 
+    /* ── Dataset toggle button ── */
+    #dataset-btn {
+      background: #1a1a1a;
+      color: #555;
+      border: 1px solid #333;
+      padding: 4px 12px;
+      font-family: inherit;
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    #dataset-btn:hover { border-color: #555; color: #aaa; }
+
+    #dataset-btn.recording {
+      background: #2a0000;
+      border-color: #ff1744;
+      color: #ff1744;
+    }
+
+    #dataset-btn.flash {
+      background: #ff1744;
+      color: #fff;
+      border-color: #ff1744;
+    }
+
     /* ── Main feed area ── */
     main {
       flex: 1;
@@ -183,6 +211,7 @@
   <div id="status-dot"></div>
   <span id="status-text">INITIALISING</span>
   <span id="stream-stats"></span>
+  <button id="dataset-btn" onclick="toggleDataset()">● REC OFF</button>
 </header>
 
 <main>
@@ -404,6 +433,47 @@
   }
 
   pollUntilStreams();
+
+  // ── Dataset recording toggle ───────────────────────────────────────────────
+
+  const datasetBtn = document.getElementById('dataset-btn');
+
+  async function toggleDataset() {
+    try {
+      const res  = await fetch('/dataset/toggle', { method: 'POST' });
+      const data = await res.json();
+      setDatasetBtn(data.collecting);
+    } catch (_) {}
+  }
+
+  function setDatasetBtn(recording) {
+    if (recording) {
+      datasetBtn.textContent = '● REC ON';
+      datasetBtn.classList.add('recording');
+    } else {
+      datasetBtn.textContent = '● REC OFF';
+      datasetBtn.classList.remove('recording');
+    }
+  }
+
+  // Poll stats — sync button state and flash on each saved frame
+  let lastSnapshot = 0;
+
+  async function pollDatasetStats() {
+    try {
+      const res  = await fetch('/dataset/stats');
+      const data = await res.json();
+      setDatasetBtn(data.collecting);
+      if (data.collecting && data.snapshots_taken !== lastSnapshot) {
+        lastSnapshot = data.snapshots_taken;
+        datasetBtn.classList.add('flash');
+        setTimeout(() => datasetBtn.classList.remove('flash'), 300);
+      }
+    } catch (_) {}
+  }
+
+  pollDatasetStats();
+  setInterval(pollDatasetStats, 500);
 </script>
 
 </body>

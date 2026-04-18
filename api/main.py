@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from ingestion.collector import DatasetCollector
 from ingestion.grabber import FrameGrabber
 from ingestion.scraper import scrape_stream_urls, stream_id
 
@@ -48,6 +49,7 @@ class StreamState:
         self.healthy: bool = False
         self.last_scrape: float = 0.0
         self.rescrape_requested: bool = False  # grabber sets this on failure
+        self.collecting: bool = False
 
     @property
     def stream_url(self) -> str | None:
@@ -58,6 +60,7 @@ class StreamState:
 
 state = StreamState()
 grabber = FrameGrabber(state)
+collector = DatasetCollector()
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +95,9 @@ async def _run_scrape() -> None:
                 state.streams.append(s)
 
     state.active_index = min(state.active_index, len(state.streams) - 1)
+
+    if state.collecting:
+        collector.update(state.streams)
 
     # Only restart the grabber if the active URL changed AND the stream is
     # currently unhealthy — avoids interrupting a working feed just to
@@ -128,6 +134,7 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(scraper_loop())
     yield
     grabber.stop()
+    collector.stop_all()
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +179,23 @@ async def select_stream(index: int):
         logger.info("Switched to stream %d: %s", index, state.streams[index]["label"])
 
     return {"active": index, "label": state.streams[index]["label"]}
+
+
+@app.post("/dataset/toggle", summary="Enable or disable dataset collection")
+async def dataset_toggle():
+    state.collecting = not state.collecting
+    if state.collecting:
+        collector.update(state.streams)
+        logger.info("Dataset collection ENABLED")
+    else:
+        collector.stop_all()
+        logger.info("Dataset collection DISABLED")
+    return {"collecting": state.collecting}
+
+
+@app.get("/dataset/stats", summary="Frame counts saved per stream")
+async def dataset_stats():
+    return {"collecting": state.collecting, "snapshots_taken": collector.snapshots_taken, "frames": collector.stats()}
 
 
 @app.get("/status", summary="Stream health and metadata")

@@ -17,11 +17,7 @@ import time
 
 logger = logging.getLogger(__name__)
 
-_FFMPEG = shutil.which("ffmpeg") or (
-    r"C:\Users\const\AppData\Local\Microsoft\WinGet\Packages"
-    r"\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe"
-    r"\ffmpeg-8.1-full_build\bin\ffmpeg.exe"
-)
+_FFMPEG = shutil.which("ffmpeg")
 
 RECONNECT_DELAY = 5
 
@@ -106,7 +102,7 @@ class FrameGrabber:
                 stderr=subprocess.PIPE,   # capture for debug logging
             )
         except FileNotFoundError:
-            logger.error("ffmpeg not found at '%s'", _FFMPEG)
+            logger.error("ffmpeg not found on PATH. Install it: winget install Gyan.FFmpeg")
             shutil.rmtree(tmpdir, ignore_errors=True)
             time.sleep(30)
             return
