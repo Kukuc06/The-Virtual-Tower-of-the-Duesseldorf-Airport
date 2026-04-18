@@ -13,7 +13,7 @@ The ingestion, viewer, and dataset collection layers are fully operational:
 - A FastAPI backend manages stream state, URL refresh on expiry, and frame capture for inference
 - The viewer UI supports switching between all three cameras with a switching overlay and live status indicator
 - A live resolution and fps counter is displayed in the header
-- **Dataset collection**: concurrent ffmpeg processes capture one JPEG per stream every 5 seconds into timestamped folders (`dataset/<camera>/`)
+- **Dataset collection**: concurrent ffmpeg processes capture one JPEG per stream every 10 seconds into timestamped folders (`dataset/<camera>/`)
 - Dataset toggle button in header with visual feedback (flashes once per snapshot = one frame from each camera)
 - Frame counts and collection status visible via `/dataset/stats` endpoint
 
@@ -56,7 +56,7 @@ The ingestion, viewer, and dataset collection layers are fully operational:
 
 | Index | Label                | Stream ID  |
 |-------|----------------------|------------|
-| 0     | Flugzeugabfertigung  | dus5abb    |
+| 0     | Flugzeugabfertigung  | —          |
 | 1     | Rollweg              | —          |
 | 2     | Vorfeld              | —          |
 
