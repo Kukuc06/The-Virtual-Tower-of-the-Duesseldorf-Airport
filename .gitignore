@@ -36,6 +36,9 @@ desktop.ini
 # Temp frame files from grabber
 vtower_*/
 
+# Dataset images (large binaries — store separately, e.g. Roboflow or local)
+dataset/
+
 # Model weights (large binaries — store separately)
 *.pt
 *.pth
